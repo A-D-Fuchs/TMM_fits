@@ -46,6 +46,7 @@ def tmm_fit(params, wavelengths, measured_intensity):
         reflectivity = []
         for wavelength in wavelengths:
             n_SiC_lamb = n_SiC.get_n(wavelength*1e-9)
+            # !!!!!!!!!!!!! Configuration of the stack !!!!!!!!
             result = tmm.coh_tmm('s', [1, n_SiC_lamb, 1, n_SiC_lamb], [np.inf, d_mem, d_vac, np.inf],
                                  th_0=0, lam_vac=wavelength)
             reflectivity.append(result['R'])
@@ -67,9 +68,12 @@ def get_fit_results(measurement_path, calibration_path, plot=False):
     calib_spec_path = calibration_path
     calib_data=np.loadtxt(calib_spec_path,skiprows=4,unpack=True)
     lamb_calib,intensity_calib= calib_data[0,:],calib_data[1,:]
+    ##### This is not ideal !!! Calibration can be improved
+    # You can change the subtraction and the multiplication with 0.8 if you like
     I_normed = intensity / (intensity_calib-310)
     I_normed = I_normed/np.max(I_normed)*0.8
     lamb_normed = lamb
+
     # lamb_min = min(lamb[0], lamb_calib[0])
     # lamb_max = max(lamb[-1], lamb_calib[-1])
     #
@@ -87,16 +91,22 @@ def get_fit_results(measurement_path, calibration_path, plot=False):
     # I_normed = I_normed / np.max(I_normed)
     # lamb_normed = lamb[i_min_lamb:i_max_lamb]
 
+    ### Change ### These are the fit parameters, set vary=False to fix the distance
+    # Make brute steps bigger for more speed --> faster fit
     params = Parameters()
     params.add('d_mem',592,min=580,max=605,vary=True,brute_step=15)
     params.add('d_vac',1500,min=1200,max=1600,vary=True,brute_step=10)
     params.add('amplitude',1,min=0.1,max=2,vary=False,brute_step=0.5)
 
+    # Wavelength after which data is ignored
+    ### Change if necessary ###
     tail_cutoff = 800
     index_ignore_tail = np.argmin(np.abs(lamb - tail_cutoff))
 
+    # XY coordiantes of the membrane center
+    ### Change for each xy map ###
     circle_mid = (-161, -1391)
-    first_lim = 75
+    first_lim = 75 # in µm
     if (np.sqrt((float(search_result[1])-circle_mid[0])**2+(float(search_result[2])-circle_mid[1])**2)) < first_lim:
         # print(f'small {first_lim}: x{search_result[1]}_y{search_result[2]}')
         params['d_vac'].set(max=1300, min=800)
@@ -121,7 +131,7 @@ def get_fit_results(measurement_path, calibration_path, plot=False):
 
 
 
-
+    # This is the acutal fit
     fit_result = tmm_fit(params, lamb_normed[:index_ignore_tail], I_normed[:index_ignore_tail])
 
     fitted_distance = fit_result["d_vac"]
@@ -132,32 +142,33 @@ def get_fit_results(measurement_path, calibration_path, plot=False):
         ax_fit.plot(lamb_normed, I_normed)
         ax_fit.set_title(f'{fit_result["d_mem"]=:4.0f} {fit_result["d_vac"]=:4.0f} x{search_result[1]}_y{search_result[2]}')
         plot_spec(lamb_normed, fit_result['d_mem'], fit_result['d_vac'], ax_fit)
+        ### Change ###
         fig_fit.savefig(rf'C:\Users\fulapuser\Documents\AlexanderFuchs\Data\PN-89\membrane_OL_xy_map_10-14-17\plots/fit_x{search_result[1]}_y{search_result[2]}.png')
+        ##############
         plt.close(fig_fit)
 
 
     # print(fit_result['d_mem']+fit_result['d_vac'])
     return fit_result['d_mem'], fit_result['d_vac']
 
-folder_path = os.path.abspath(r'C:\Users\fulapuser\Documents\AlexanderFuchs\Data\PN-89\membrane_OL_xy_map_10-14-17')
-#search_pattern = re.compile(r'^spec_fabry_x(.*)_y(.*).txt$')
-# search_pattern = re.compile(r'^spec_fabry.*.txt$')
-i = 0
-results_mem = []
-results_vac = []
-x_list = []
-y_list = []
-lamb_list = []
+
 
 
 
 def get_regex_matches(folder_path):
+    """Compares all files in folder_path with the regex condition.
+
+    :param folder_path:
+    :return:
+    """
     match_list = []
     search_pattern = re.compile(r'^spec.*_x(.*)_y(.*).txt$')
     for file in os.listdir(folder_path):
         search_result = search_pattern.search(file)
         if search_result:
-            if (-3000 < float(search_result[1]) < 11110) and (-4330 < float(search_result[2]) < 10500):
+            ### Change ### To restrict files in x (result [1]) or y (result [2])
+            if (-71000 < float(search_result[1]) < 6900) and (-4330 < float(search_result[2]) < 10500):
+                ##############
                 filepath = os.path.join(folder_path, search_result[0])
                 match_list.append(filepath)
     return match_list
@@ -168,8 +179,12 @@ def use_parallel(filepath):
     search_result = search_pattern.search(filepath)
     print(f'x{search_result[1]}, y{search_result[2]}')
     filepath = os.path.join(folder_path,search_result[0])
+    ### Change ### Set which spectrum should be used for calibration
     calib_spec_path = os.path.abspath(r"C:\Users\fulapuser\Documents\AlexanderFuchs\Data\PN-89\membrane_OL_xy_map_10-14-17\spectrum_x-64_y-1290.txt")
+    ##############
     # calib_spec_path = os.path.abspath(r"\\confocal2\Measurement_Data\Morris\FP_morris\161\mirror_for_fabryperot_calibration\iris2.5mm_18-01-10\spec_fabry_x371.45_y-383.4.txt")
+
+    # Set plot=True to plot each fit
     result_mem, result_vac = get_fit_results(filepath, calib_spec_path,plot=False)
     plt.show()
     results_mem.append(result_mem)
@@ -179,7 +194,21 @@ def use_parallel(filepath):
     return search_result[1], search_result[2], float(result_vac), float(result_mem)
 
 
+### Change ### These are the xy spectrum maps
+folder_path = os.path.abspath(r'C:\Users\fulapuser\Documents\AlexanderFuchs\Data\PN-89\membrane_OL_xy_map_10-14-17')
+##############
+
+#search_pattern = re.compile(r'^spec_fabry_x(.*)_y(.*).txt$')
+# search_pattern = re.compile(r'^spec_fabry.*.txt$')
+i = 0
+results_mem = []
+results_vac = []
+x_list = []
+y_list = []
+lamb_list = []
+
 plot_each_fit = False
+# use_parallel is the function called with argument file_path
 parallel_result = Parallel(n_jobs=-1)(delayed(use_parallel)(file_path) for file_path in get_regex_matches(folder_path))
 for result in parallel_result:
     if result:
@@ -191,7 +220,7 @@ for result in parallel_result:
 
 
 
-
+# This plot the final data
 x_array = np.array(x_list, dtype=float)
 y_array = np.array(y_list, dtype=float)
 matplotlib.use('qt5agg')
